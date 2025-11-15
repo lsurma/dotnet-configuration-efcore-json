@@ -2,6 +2,13 @@
 
 This project demonstrates how to create a custom IConfiguration provider in .NET 8 that fetches settings from an internal async service and flattens nested objects into configuration key-value pairs.
 
+## Key Features
+
+- **Custom async configuration provider** - Loads settings from async sources
+- **Nested object flattening** - Automatically converts complex objects to flat configuration keys
+- **Override priority** - Custom configuration overrides all other sources (appsettings, environment variables, etc.)
+- **Seamless integration** - Works with .NET's standard IConfiguration system
+
 ## Project Structure
 
 - **ConfigurationProvider.WebApi** - .NET 8 Web API using traditional Program.cs and Startup.cs pattern
@@ -60,6 +67,9 @@ In `Program.cs`:
 Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
+        // Add custom configuration provider that fetches settings from internal service
+        // This is added AFTER all default sources (appsettings, user secrets, env vars, command line)
+        // so it will override all other configuration sources
         var settingsService = new MockSettingsService();
         config.AddAsyncObjectConfiguration(() => settingsService.GetSettingsAsync());
     })
@@ -68,6 +78,13 @@ Host.CreateDefaultBuilder(args)
         webBuilder.UseStartup<Startup>();
     });
 ```
+
+**Important:** The custom configuration provider is added in `ConfigureAppConfiguration`, which runs after all default configuration sources. This means it will **override** values from:
+- appsettings.json
+- appsettings.{Environment}.json
+- User secrets (in Development)
+- Environment variables
+- Command-line arguments
 
 ### Accessing Configuration
 
@@ -120,6 +137,27 @@ curl http://localhost:5090/api/configuration/value/Notifications:Enabled
 
 ## Implementation Details
 
+### Configuration Override Behavior
+
+The custom configuration provider is designed to override all other configuration sources. Here's how it works:
+
+**Configuration Source Order:**
+1. appsettings.json (loaded by CreateDefaultBuilder)
+2. appsettings.{Environment}.json (loaded by CreateDefaultBuilder)
+3. User secrets (in Development environment)
+4. Environment variables
+5. Command-line arguments
+6. **Custom configuration provider** ← Added last, overrides everything above
+
+**Example Override:**
+```
+appsettings.json:         Notifications:Enabled = false
+Custom configuration:     Notifications:Enabled = true
+Final value:              true (custom config wins)
+```
+
+This ensures your internal service settings always take precedence over any other configuration source, making it ideal for centralized configuration management.
+
 ### Traditional Startup Pattern
 
 The project uses the traditional .NET startup pattern with:
@@ -136,11 +174,13 @@ The provider uses reflection to recursively flatten nested objects:
 
 ## Tests
 
-The test project includes comprehensive tests:
+The test project includes comprehensive tests for:
 - Simple object flattening
 - Nested object flattening
 - Complex object with multiple levels
 - Binding to strongly-typed objects
 - Async loading verification
+- **Configuration override behavior** (verifies custom config overrides appsettings and environment variables)
+- **Multi-source configuration order** (validates precedence rules)
 
-All tests pass successfully, verifying the custom configuration provider works correctly.
+All tests pass successfully, verifying the custom configuration provider works correctly and overrides other sources as expected.

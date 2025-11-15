@@ -15,6 +15,8 @@ public class Program
             .ConfigureAppConfiguration((context, config) =>
             {
                 // Add custom configuration provider that fetches settings from internal service
+                // This is added AFTER all default sources (appsettings, user secrets, env vars, command line)
+                // so it will override all other configuration sources
                 var settingsService = new MockSettingsService();
                 config.AddAsyncObjectConfiguration(() => settingsService.GetSettingsAsync());
             })
