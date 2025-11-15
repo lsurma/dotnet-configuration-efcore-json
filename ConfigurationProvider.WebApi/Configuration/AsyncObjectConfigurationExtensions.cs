@@ -6,7 +6,8 @@ public static class AsyncObjectConfigurationExtensions
 {
     public static IConfigurationBuilder AddAsyncObjectConfiguration(
         this IConfigurationBuilder builder,
-        Func<Task<object>> settingsFactory)
+        Func<Task<object>> settingsFactory,
+        TimeSpan? reloadInterval = null)
     {
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));
@@ -14,6 +15,6 @@ public static class AsyncObjectConfigurationExtensions
         if (settingsFactory == null)
             throw new ArgumentNullException(nameof(settingsFactory));
 
-        return builder.Add(new AsyncObjectConfigurationSource(settingsFactory));
+        return builder.Add(new AsyncObjectConfigurationSource(settingsFactory, reloadInterval));
     }
 }

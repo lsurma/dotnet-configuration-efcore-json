@@ -3,13 +3,17 @@ using Microsoft.Extensions.Configuration;
 
 namespace ConfigurationProvider.WebApi.Configuration;
 
-public class AsyncObjectConfigurationProvider : Microsoft.Extensions.Configuration.ConfigurationProvider
+public class AsyncObjectConfigurationProvider : Microsoft.Extensions.Configuration.ConfigurationProvider, IDisposable
 {
     private readonly Func<Task<object>> _settingsFactory;
+    private readonly TimeSpan? _reloadInterval;
+    private Timer? _reloadTimer;
+    private bool _disposed;
 
-    public AsyncObjectConfigurationProvider(Func<Task<object>> settingsFactory)
+    public AsyncObjectConfigurationProvider(Func<Task<object>> settingsFactory, TimeSpan? reloadInterval = null)
     {
         _settingsFactory = settingsFactory ?? throw new ArgumentNullException(nameof(settingsFactory));
+        _reloadInterval = reloadInterval;
     }
 
     public override void Load()
@@ -20,6 +24,43 @@ public class AsyncObjectConfigurationProvider : Microsoft.Extensions.Configurati
         if (settings != null)
         {
             Data = FlattenObject(settings);
+        }
+
+        // Start periodic reload timer if interval is specified
+        if (_reloadInterval.HasValue && _reloadTimer == null)
+        {
+            _reloadTimer = new Timer(
+                callback: _ => ReloadAsync().GetAwaiter().GetResult(),
+                state: null,
+                dueTime: _reloadInterval.Value,
+                period: _reloadInterval.Value);
+        }
+    }
+
+    /// <summary>
+    /// Manually reload the configuration from the settings source.
+    /// </summary>
+    public async Task ReloadAsync()
+    {
+        if (_disposed)
+            return;
+
+        var settings = await _settingsFactory();
+        
+        if (settings != null)
+        {
+            Data = FlattenObject(settings);
+            // Notify the configuration system that data has changed
+            OnReload();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _reloadTimer?.Dispose();
+            _disposed = true;
         }
     }
 

@@ -7,6 +7,7 @@ This project demonstrates how to create a custom IConfiguration provider in .NET
 - **Custom async configuration provider** - Loads settings from async sources
 - **Nested object flattening** - Automatically converts complex objects to flat configuration keys
 - **Override priority** - Custom configuration overrides all other sources (appsettings, environment variables, etc.)
+- **Configuration reloading** - Supports both manual and automatic periodic reloading
 - **Seamless integration** - Works with .NET's standard IConfiguration system
 
 ## Project Structure
@@ -19,9 +20,10 @@ This project demonstrates how to create a custom IConfiguration provider in .NET
 ### 1. Custom Configuration Provider
 Located in `ConfigurationProvider.WebApi/Configuration/`:
 
-- **AsyncObjectConfigurationProvider.cs** - The custom configuration provider that loads settings from an async source
+- **AsyncObjectConfigurationProvider.cs** - The custom configuration provider that loads settings from an async source with reload support
 - **AsyncObjectConfigurationSource.cs** - The configuration source that creates the provider
 - **AsyncObjectConfigurationExtensions.cs** - Extension methods for easy integration
+- **ConfigurationReloadService.cs** - Service to manage manual configuration reloading
 
 ### 2. Settings Models
 Located in `ConfigurationProvider.WebApi/Models/`:
@@ -98,6 +100,71 @@ var settings = new NotificationsSettings();
 _configuration.GetSection("Notifications").Bind(settings);
 ```
 
+## Configuration Reloading
+
+The custom configuration provider supports both manual and automatic reloading:
+
+### Manual Reload
+
+You can manually trigger a configuration reload using the `IConfigurationReloadService`:
+
+```csharp
+public class MyService
+{
+    private readonly IConfigurationReloadService _reloadService;
+    
+    public MyService(IConfigurationReloadService reloadService)
+    {
+        _reloadService = reloadService;
+    }
+    
+    public async Task RefreshConfiguration()
+    {
+        await _reloadService.ReloadAsync();
+    }
+}
+```
+
+Or via the API endpoint:
+```bash
+curl -X POST http://localhost:5090/api/configuration/reload
+```
+
+### Automatic Periodic Reload
+
+Configure automatic periodic reloading by specifying a reload interval:
+
+```csharp
+Host.CreateDefaultBuilder(args)
+    .ConfigureAppConfiguration((context, config) =>
+    {
+        var service = new MockSettingsService();
+        // Reload configuration every 5 minutes
+        config.AddAsyncObjectConfiguration(
+            () => service.GetSettingsAsync(),
+            reloadInterval: TimeSpan.FromMinutes(5));
+    })
+    .ConfigureWebHostDefaults(webBuilder => webBuilder.UseStartup<Startup>());
+```
+
+### Change Notifications
+
+The configuration provider properly implements change notifications, so any code using `IOptionsMonitor<T>` or `IConfiguration.GetReloadToken()` will be notified when configuration changes:
+
+```csharp
+public class MyService
+{
+    public MyService(IOptionsMonitor<NotificationsSettings> optionsMonitor)
+    {
+        optionsMonitor.OnChange(settings =>
+        {
+            // This will be called when configuration is reloaded
+            Console.WriteLine($"Settings changed: Enabled={settings.Enabled}");
+        });
+    }
+}
+```
+
 ## API Endpoints
 
 The sample application provides the following endpoints:
@@ -105,6 +172,7 @@ The sample application provides the following endpoints:
 - `GET /api/configuration/all` - Returns all configuration key-value pairs
 - `GET /api/configuration/notifications` - Returns bound NotificationsSettings object
 - `GET /api/configuration/value/{key}` - Returns specific configuration value by key
+- `POST /api/configuration/reload` - Manually triggers configuration reload
 
 ## Running the Application
 
@@ -133,6 +201,9 @@ curl http://localhost:5090/api/configuration/notifications
 
 # Get specific value
 curl http://localhost:5090/api/configuration/value/Notifications:Enabled
+
+# Trigger configuration reload
+curl -X POST http://localhost:5090/api/configuration/reload
 ```
 
 ## Implementation Details
@@ -182,5 +253,9 @@ The test project includes comprehensive tests for:
 - Async loading verification
 - **Configuration override behavior** (verifies custom config overrides appsettings and environment variables)
 - **Multi-source configuration order** (validates precedence rules)
+- **Manual configuration reload** (verifies ReloadAsync updates configuration)
+- **Automatic periodic reload** (validates timer-based reloading)
+- **Change notifications** (ensures IConfiguration.GetReloadToken() works correctly)
+- **Resource cleanup** (verifies Dispose stops periodic reload)
 
-All tests pass successfully, verifying the custom configuration provider works correctly and overrides other sources as expected.
+All 12 tests pass successfully, verifying the custom configuration provider works correctly including reload functionality.

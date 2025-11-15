@@ -1,3 +1,4 @@
+using ConfigurationProvider.WebApi.Configuration;
 using ConfigurationProvider.WebApi.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,10 +9,12 @@ namespace ConfigurationProvider.WebApi.Controllers;
 public class ConfigurationController : ControllerBase
 {
     private readonly IConfiguration _configuration;
+    private readonly IConfigurationReloadService _reloadService;
 
-    public ConfigurationController(IConfiguration configuration)
+    public ConfigurationController(IConfiguration configuration, IConfigurationReloadService reloadService)
     {
         _configuration = configuration;
+        _reloadService = reloadService;
     }
 
     [HttpGet("all")]
@@ -47,5 +50,12 @@ public class ConfigurationController : ControllerBase
         }
 
         return Ok(new { key, value });
+    }
+
+    [HttpPost("reload")]
+    public async Task<IActionResult> ReloadConfiguration()
+    {
+        await _reloadService.ReloadAsync();
+        return Ok(new { message = "Configuration reloaded successfully" });
     }
 }

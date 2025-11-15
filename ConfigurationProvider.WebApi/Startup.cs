@@ -1,3 +1,5 @@
+using ConfigurationProvider.WebApi.Configuration;
+
 namespace ConfigurationProvider.WebApi;
 
 public class Startup
@@ -15,6 +17,9 @@ public class Startup
         services.AddControllers();
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
+        
+        // Register configuration reload service
+        services.AddSingleton<IConfigurationReloadService, ConfigurationReloadService>();
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
