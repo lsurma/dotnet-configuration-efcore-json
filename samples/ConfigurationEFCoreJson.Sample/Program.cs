@@ -8,20 +8,33 @@ const string connectionString = "Data Source=config.db";
 // Initialize database and seed some sample data
 await InitializeDatabaseAsync(connectionString);
 
-// Create configuration using the EF Core JSON provider
+// Create DbContext for remote configuration
+var optionsBuilder = new DbContextOptionsBuilder<ConfigurationDbContext>();
+optionsBuilder.UseSqlite(connectionString);
+var dbContext = new ConfigurationDbContext(optionsBuilder.Options);
+
+// Create configuration with built-in sources (appsettings, env, secrets) + remote config
 var configuration = new ConfigurationBuilder()
-    .AddEFCoreJsonConfiguration(connectionString)
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
+    .AddEnvironmentVariables()
+    .AddRemoteConfig(dbContext)  // Add remote configuration from database
     .Build();
 
 // Display configuration values
-Console.WriteLine("=== Configuration Values from SQLite ===");
+Console.WriteLine("=== Configuration Values from Multiple Sources ===");
 Console.WriteLine();
 
-// Simple value
-Console.WriteLine($"AppName: {configuration["AppName"]}");
+// Simple value from database
+Console.WriteLine($"AppName (from DB): {configuration["AppName"]}");
 Console.WriteLine();
 
-// Nested object values
+// Simple value from database
+Console.WriteLine($"AppName (from DB): {configuration["AppName"]}");
+Console.WriteLine();
+
+// Nested object values from database
 Console.WriteLine("Database Settings:");
 Console.WriteLine($"  Host: {configuration["Database:Host"]}");
 Console.WriteLine($"  Port: {configuration["Database:Port"]}");
@@ -43,7 +56,7 @@ Console.WriteLine($"  [2]: {configuration["AllowedHosts:2"]}");
 Console.WriteLine();
 
 // Complex nested structure with arrays of objects
-Console.WriteLine("API Endpoints:");
+Console.WriteLine("API Endpoints (from DB):");
 Console.WriteLine($"  [0] Name: {configuration["ApiEndpoints:0:Name"]}");
 Console.WriteLine($"  [0] Url: {configuration["ApiEndpoints:0:Url"]}");
 Console.WriteLine($"  [0] Timeout: {configuration["ApiEndpoints:0:Timeout"]}");
@@ -52,7 +65,15 @@ Console.WriteLine($"  [1] Url: {configuration["ApiEndpoints:1:Url"]}");
 Console.WriteLine($"  [1] Timeout: {configuration["ApiEndpoints:1:Timeout"]}");
 Console.WriteLine();
 
-Console.WriteLine("Configuration loaded successfully from SQLite database!");
+// Configuration from appsettings.json (if it exists)
+Console.WriteLine("Configuration from appsettings.json:");
+Console.WriteLine($"  Version: {configuration["AppSettings:Version"]}");
+Console.WriteLine($"  Environment: {configuration["AppSettings:Environment"]}");
+Console.WriteLine($"  LocalSetting: {configuration["LocalSetting"]}");
+Console.WriteLine();
+
+Console.WriteLine("Configuration loaded successfully from multiple sources!");
+Console.WriteLine("(appsettings.json, environment variables, and SQLite database)");
 
 // Helper method to initialize database with sample data
 static async Task InitializeDatabaseAsync(string connectionString)

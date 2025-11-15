@@ -8,8 +8,10 @@ A .NET 8 library that provides an IConfiguration provider for Entity Framework C
 - ✅ Full support for nested objects and arrays
 - ✅ Compatible with .NET's `IConfiguration` interface
 - ✅ Automatic JSON flattening to configuration keys
-- ✅ Simple and intuitive API
+- ✅ Simple and intuitive API with abstraction layer
 - ✅ Entity Framework Core integration
+- ✅ Chain with built-in configuration sources (appsettings.json, environment variables, user secrets)
+- ✅ Extensible through `IRemoteConfigurationProvider` interface
 
 ## Installation
 
@@ -26,22 +28,32 @@ dotnet add package ConfigurationEFCoreJson
 ```bash
 dotnet add package Microsoft.EntityFrameworkCore.Sqlite
 dotnet add package Microsoft.Extensions.Configuration
+dotnet add package Microsoft.Extensions.Configuration.Json
+dotnet add package Microsoft.Extensions.Configuration.EnvironmentVariables
 ```
 
-### 2. Use the configuration provider
+### 2. Use the configuration provider with your DbContext
 
 ```csharp
 using ConfigurationEFCoreJson;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
+// Create DbContext
+var optionsBuilder = new DbContextOptionsBuilder<ConfigurationDbContext>();
+optionsBuilder.UseSqlite("Data Source=config.db");
+var dbContext = new ConfigurationDbContext(optionsBuilder.Options);
+
+// Build configuration with multiple sources
 var configuration = new ConfigurationBuilder()
-    .AddEFCoreJsonConfiguration("Data Source=config.db")
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddEnvironmentVariables()
+    .AddRemoteConfig(dbContext)  // Add database configuration
     .Build();
 
 // Access configuration values
 var appName = configuration["AppName"];
 var dbHost = configuration["Database:Host"];
-var dbPort = configuration["Database:Port"];
 ```
 
 ### 3. Seed configuration data
@@ -167,26 +179,41 @@ var name1 = configuration["ApiEndpoints:1:Name"];      // "Orders API"
 
 ### Extension Methods
 
-#### `AddEFCoreJsonConfiguration(Action<DbContextOptionsBuilder>)`
+#### `AddRemoteConfig(IRemoteConfigurationProvider)`
 
-Adds an EF Core JSON configuration source with custom DbContext options.
-
-```csharp
-var configuration = new ConfigurationBuilder()
-    .AddEFCoreJsonConfiguration(options => 
-        options.UseSqlite("Data Source=config.db"))
-    .Build();
-```
-
-#### `AddEFCoreJsonConfiguration(string connectionString)`
-
-Adds an EF Core JSON configuration source using SQLite with a connection string.
+Adds a remote configuration source with a custom provider.
 
 ```csharp
 var configuration = new ConfigurationBuilder()
-    .AddEFCoreJsonConfiguration("Data Source=config.db")
+    .AddRemoteConfig(myRemoteProvider)
     .Build();
 ```
+
+#### `AddRemoteConfig<TContext>(TContext)`
+
+Adds a remote configuration source using a DbContext.
+
+```csharp
+var dbContext = new ConfigurationDbContext(options);
+var configuration = new ConfigurationBuilder()
+    .AddRemoteConfig(dbContext)
+    .Build();
+```
+
+### Interfaces
+
+#### `IRemoteConfigurationProvider`
+
+Interface for custom remote configuration providers.
+
+```csharp
+public interface IRemoteConfigurationProvider
+{
+    IDictionary<string, string?> LoadConfiguration();
+}
+```
+
+Implement this interface to create custom configuration providers from any source (REST API, cloud storage, etc.).
 
 ### Classes
 
@@ -206,13 +233,74 @@ DbContext for accessing configuration settings.
 **DbSet:**
 - `ConfigurationSettings`: Collection of configuration settings
 
-#### `EFCoreJsonConfigurationProvider`
+#### `DbContextConfigurationProvider<TContext>`
 
-Configuration provider that reads settings from EF Core database and flattens JSON to configuration keys.
+Configuration provider that loads settings from a DbContext with ConfigurationSettings DbSet.
 
-#### `EFCoreJsonConfigurationSource`
+#### `RemoteConfigurationProvider`
 
-Configuration source for EF Core JSON configuration provider.
+Configuration provider that delegates loading to an `IRemoteConfigurationProvider` implementation.
+
+#### `RemoteConfigurationSource`
+
+Configuration source for remote configuration providers.
+
+## Chaining Configuration Sources
+
+The library is designed to work alongside built-in configuration sources:
+
+```csharp
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{environment}.json", optional: true)
+    .AddEnvironmentVariables()
+    .AddUserSecrets<Program>(optional: true)
+    .AddRemoteConfig(dbContext)  // Database config loaded last, can override earlier sources
+    .Build();
+```
+
+Configuration sources added later override values from earlier sources. This allows you to have default settings in appsettings.json and override them with database values.
+
+## Creating Custom Remote Configuration Providers
+
+You can create custom configuration providers by implementing `IRemoteConfigurationProvider`:
+
+```csharp
+public class ApiConfigurationProvider : IRemoteConfigurationProvider
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _apiUrl;
+
+    public ApiConfigurationProvider(HttpClient httpClient, string apiUrl)
+    {
+        _httpClient = httpClient;
+        _apiUrl = apiUrl;
+    }
+
+    public IDictionary<string, string?> LoadConfiguration()
+    {
+        var data = new Dictionary<string, string?>();
+        
+        // Fetch configuration from REST API
+        var response = _httpClient.GetStringAsync(_apiUrl).Result;
+        var config = JsonSerializer.Deserialize<Dictionary<string, string>>(response);
+        
+        foreach (var kvp in config)
+        {
+            data[kvp.Key] = kvp.Value;
+        }
+        
+        return data;
+    }
+}
+
+// Usage
+var apiProvider = new ApiConfigurationProvider(httpClient, "https://api.example.com/config");
+var configuration = new ConfigurationBuilder()
+    .AddRemoteConfig(apiProvider)
+    .Build();
+```
 
 ## How It Works
 
