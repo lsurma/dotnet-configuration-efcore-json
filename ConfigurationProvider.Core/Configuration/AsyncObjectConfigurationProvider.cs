@@ -1,7 +1,7 @@
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 
-namespace ConfigurationProvider.WebApi.Configuration;
+namespace ConfigurationProvider.Core.Configuration;
 
 public class AsyncObjectConfigurationProvider : Microsoft.Extensions.Configuration.ConfigurationProvider, IDisposable
 {

@@ -1,6 +1,7 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace ConfigurationProvider.WebApi.Configuration;
+namespace ConfigurationProvider.Core.Configuration;
 
 /// <summary>
 /// Service that allows manual reloading of the custom configuration provider.

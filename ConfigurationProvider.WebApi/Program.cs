@@ -1,4 +1,4 @@
-using ConfigurationProvider.WebApi.Configuration;
+using ConfigurationProvider.Core.Configuration;
 using ConfigurationProvider.WebApi.Services;
 
 namespace ConfigurationProvider.WebApi;

@@ -1,4 +1,4 @@
-using ConfigurationProvider.WebApi.Configuration;
+using ConfigurationProvider.Core.Configuration;
 using ConfigurationProvider.WebApi.Models;
 using Microsoft.Extensions.Configuration;
 

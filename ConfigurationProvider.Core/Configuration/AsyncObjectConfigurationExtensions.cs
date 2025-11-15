@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace ConfigurationProvider.WebApi.Configuration;
+namespace ConfigurationProvider.Core.Configuration;
 
 public static class AsyncObjectConfigurationExtensions
 {

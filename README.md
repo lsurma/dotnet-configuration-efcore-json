@@ -12,26 +12,27 @@ This project demonstrates how to create a custom IConfiguration provider in .NET
 
 ## Project Structure
 
-- **ConfigurationProvider.WebApi** - .NET 8 Web API using traditional Program.cs and Startup.cs pattern
+- **ConfigurationProvider.Core** - Core class library containing the custom configuration provider implementation
+- **ConfigurationProvider.WebApi** - .NET 8 Web API for testing and demonstrating the configuration provider (uses traditional Program.cs and Startup.cs pattern)
 - **ConfigurationProvider.Tests** - xUnit test project for testing the custom configuration provider
 
 ## Key Components
 
-### 1. Custom Configuration Provider
-Located in `ConfigurationProvider.WebApi/Configuration/`:
+### 1. Custom Configuration Provider (Core Project)
+Located in `ConfigurationProvider.Core/Configuration/`:
 
 - **AsyncObjectConfigurationProvider.cs** - The custom configuration provider that loads settings from an async source with reload support
 - **AsyncObjectConfigurationSource.cs** - The configuration source that creates the provider
 - **AsyncObjectConfigurationExtensions.cs** - Extension methods for easy integration
 - **ConfigurationReloadService.cs** - Service to manage manual configuration reloading
 
-### 2. Settings Models
+### 2. Settings Models (WebApi Project)
 Located in `ConfigurationProvider.WebApi/Models/`:
 
 - **NotificationsSettings.cs** - Example settings class with nested properties
 - **UserNotificationSettings.cs** - Nested settings class
 
-### 3. Mock Service
+### 3. Mock Service (WebApi Project)
 Located in `ConfigurationProvider.WebApi/Services/`:
 
 - **ISettingsService.cs** - Interface for settings service
