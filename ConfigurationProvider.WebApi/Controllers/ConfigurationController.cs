@@ -1,5 +1,5 @@
-using ConfigurationProvider.Core.Configuration;
 using ConfigurationProvider.WebApi.Models;
+using ConfigurationProvider.WebApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ConfigurationProvider.WebApi.Controllers;
@@ -9,12 +9,12 @@ namespace ConfigurationProvider.WebApi.Controllers;
 public class ConfigurationController : ControllerBase
 {
     private readonly IConfiguration _configuration;
-    private readonly IConfigurationReloadService _reloadService;
+    private readonly ISettingsService _settingsService;
 
-    public ConfigurationController(IConfiguration configuration, IConfigurationReloadService reloadService)
+    public ConfigurationController(IConfiguration configuration, ISettingsService settingsService)
     {
         _configuration = configuration;
-        _reloadService = reloadService;
+        _settingsService = settingsService;
     }
 
     [HttpGet("all")]
@@ -55,7 +55,8 @@ public class ConfigurationController : ControllerBase
     [HttpPost("reload")]
     public async Task<IActionResult> ReloadConfiguration()
     {
-        await _reloadService.ReloadAsync();
+        // Reload settings from the source (e.g., database) and SetData will automatically trigger reload
+        await _settingsService.ReloadSettingsAsync();
         return Ok(new { message = "Configuration reloaded successfully" });
     }
 }

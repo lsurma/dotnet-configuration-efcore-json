@@ -1,4 +1,4 @@
-using ConfigurationProvider.Core.Configuration;
+using ConfigurationProvider.WebApi.Services;
 
 namespace ConfigurationProvider.WebApi;
 
@@ -17,14 +17,18 @@ public class Startup
         services.AddControllers();
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
-        
-        // Register configuration reload service
-        services.AddSingleton<IConfigurationReloadService, ConfigurationReloadService>();
+
+        // Register settings service that will populate configuration provider
+        services.AddSingleton<ISettingsService, MockSettingsService>();
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ISettingsService settingsService)
     {
+        // Load settings from database and populate configuration provider
+        // This happens after DI container is initialized, so we can use services with dependencies
+        settingsService.LoadAndPopulateConfigurationAsync().GetAwaiter().GetResult();
+
         if (env.IsDevelopment())
         {
             app.UseSwagger();

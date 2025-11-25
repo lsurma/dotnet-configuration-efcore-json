@@ -1,137 +1,54 @@
 using ConfigurationProvider.Core.Configuration;
 using ConfigurationProvider.WebApi.Models;
 using Microsoft.Extensions.Configuration;
+using GeneralSettings = ConfigurationProvider.WebApi.Services.GeneralSettings;
+using UserSettings = ConfigurationProvider.WebApi.Services.UserSettings;
 
 namespace ConfigurationProvider.Tests;
 
 public class AsyncObjectConfigurationProviderTests
 {
     [Fact]
-    public void Load_WithSimpleObject_FlattensCorrectly()
+    public void SetData_WorksCorrectly()
     {
         // Arrange
-        var testSettings = new
-        {
-            AppName = "TestApp",
-            Version = "1.0.0"
-        };
-
         var configBuilder = new ConfigurationBuilder();
-        configBuilder.AddAsyncObjectConfiguration(() => Task.FromResult<object>(testSettings));
-
-        // Act
-        var configuration = configBuilder.Build();
-
-        // Assert
-        Assert.Equal("TestApp", configuration["AppName"]);
-        Assert.Equal("1.0.0", configuration["Version"]);
-    }
-
-    [Fact]
-    public void Load_WithNestedObject_FlattensCorrectly()
-    {
-        // Arrange
-        var testSettings = new
-        {
-            Notifications = new NotificationsSettings
-            {
-                Enabled = true,
-                UserSettings = new UserNotificationSettings
-                {
-                    UseMail = false
-                }
-            }
-        };
-
-        var configBuilder = new ConfigurationBuilder();
-        configBuilder.AddAsyncObjectConfiguration(() => Task.FromResult<object>(testSettings));
-
-        // Act
-        var configuration = configBuilder.Build();
-
-        // Assert
-        Assert.Equal("True", configuration["Notifications:Enabled"]);
-        Assert.Equal("False", configuration["Notifications:UserSettings:UseMail"]);
-    }
-
-    [Fact]
-    public void Load_WithComplexObject_AllPropertiesAccessible()
-    {
-        // Arrange
-        var testSettings = new
-        {
-            Notifications = new NotificationsSettings
-            {
-                Enabled = true,
-                UserSettings = new UserNotificationSettings
-                {
-                    UseMail = true
-                }
-            },
-            AppName = "ConfigApp",
-            Version = "2.0.0"
-        };
-
-        var configBuilder = new ConfigurationBuilder();
-        configBuilder.AddAsyncObjectConfiguration(() => Task.FromResult<object>(testSettings));
-
-        // Act
-        var configuration = configBuilder.Build();
-
-        // Assert
-        Assert.Equal("True", configuration["Notifications:Enabled"]);
-        Assert.Equal("True", configuration["Notifications:UserSettings:UseMail"]);
-        Assert.Equal("ConfigApp", configuration["AppName"]);
-        Assert.Equal("2.0.0", configuration["Version"]);
-    }
-
-    [Fact]
-    public void Bind_ToNotificationsSettings_BindsCorrectly()
-    {
-        // Arrange
-        var testSettings = new
-        {
-            Notifications = new NotificationsSettings
-            {
-                Enabled = true,
-                UserSettings = new UserNotificationSettings
-                {
-                    UseMail = false
-                }
-            }
-        };
-
-        var configBuilder = new ConfigurationBuilder();
-        configBuilder.AddAsyncObjectConfiguration(() => Task.FromResult<object>(testSettings));
+        configBuilder.AddAsyncObjectConfiguration();
         var configuration = configBuilder.Build();
 
         // Act
-        var boundSettings = new NotificationsSettings();
-        configuration.GetSection("Notifications").Bind(boundSettings);
+        var settingsProvider = new TestSettingsProvider();
+        AsyncObjectConfigurationProvider.SetData(settingsProvider.GetAllSettings());
 
-        // Assert
-        Assert.True(boundSettings.Enabled);
-        Assert.False(boundSettings.UserSettings.UseMail);
+        // Assert - Check that configuration was loaded
+        Assert.NotNull(configuration);
+        var allKeys = configuration.AsEnumerable().Where(kvp => !string.IsNullOrEmpty(kvp.Key)).ToList();
+        Assert.NotEmpty(allKeys);
     }
 
     [Fact]
-    public async Task Load_WithAsyncMethod_LoadsSuccessfully()
+    public void SetData_TriggersReload()
     {
         // Arrange
         var configBuilder = new ConfigurationBuilder();
-        configBuilder.AddAsyncObjectConfiguration(async () =>
+        configBuilder.AddAsyncObjectConfiguration();
+        var configuration = configBuilder.Build();
+
+        AsyncObjectConfigurationProvider.SetData(new List<ISettings>
         {
-            await Task.Delay(10); // Simulate async work
-            return new
-            {
-                AsyncSetting = "LoadedAsync"
-            };
+            new GeneralSettings { AppName = "Initial", Version = "1.0" }
         });
 
-        // Act
-        var configuration = configBuilder.Build();
+        var initialAppName = configuration["General:AppName"];
+
+        // Act - Update data
+        AsyncObjectConfigurationProvider.SetData(new List<ISettings>
+        {
+            new GeneralSettings { AppName = "Updated", Version = "2.0" }
+        });
 
         // Assert
-        Assert.Equal("LoadedAsync", configuration["AsyncSetting"]);
+        Assert.Equal("Updated", configuration["General:AppName"]);
+        Assert.NotEqual(initialAppName, configuration["General:AppName"]);
     }
 }

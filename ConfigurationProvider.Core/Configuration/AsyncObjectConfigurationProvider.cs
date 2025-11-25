@@ -1,115 +1,176 @@
 using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 
 namespace ConfigurationProvider.Core.Configuration;
 
-public class AsyncObjectConfigurationProvider : Microsoft.Extensions.Configuration.ConfigurationProvider, IDisposable
+public class AsyncObjectConfigurationProvider : Microsoft.Extensions.Configuration.ConfigurationProvider
 {
-    private readonly Func<Task<object>> _settingsFactory;
-    private readonly TimeSpan? _reloadInterval;
-    private Timer? _reloadTimer;
-    private bool _disposed;
+    private static IEnumerable<ISettings>? _settingsData;
+    private static AsyncObjectConfigurationProvider? _self;
+    private static readonly object _lock = new();
 
-    public AsyncObjectConfigurationProvider(Func<Task<object>> settingsFactory, TimeSpan? reloadInterval = null)
+    public AsyncObjectConfigurationProvider()
     {
-        _settingsFactory = settingsFactory ?? throw new ArgumentNullException(nameof(settingsFactory));
-        _reloadInterval = reloadInterval;
-    }
-
-    public override void Load()
-    {
-        // Since Load() is synchronous, we need to call the async method synchronously
-        var settings = _settingsFactory().GetAwaiter().GetResult();
-        
-        if (settings != null)
+        // Register this instance
+        lock (_lock)
         {
-            Data = FlattenObject(settings);
-        }
-
-        // Start periodic reload timer if interval is specified
-        if (_reloadInterval.HasValue && _reloadTimer == null)
-        {
-            _reloadTimer = new Timer(
-                callback: _ => ReloadAsync().GetAwaiter().GetResult(),
-                state: null,
-                dueTime: _reloadInterval.Value,
-                period: _reloadInterval.Value);
+            if (_self != null)
+            {
+                throw new InvalidOperationException("Only one instance of AsyncObjectConfigurationProvider is allowed.");
+            }
+            
+            _self = this;
         }
     }
 
     /// <summary>
-    /// Manually reload the configuration from the settings source.
+    /// Sets the settings data that will be used by the configuration provider.
+    /// This is typically called by a settings service after DI container is initialized.
+    /// This method automatically triggers reload on all registered provider instances.
     /// </summary>
-    public async Task ReloadAsync()
+    /// <param name="settings">Collection of settings objects that implement ISettings interface</param>
+    public static void SetData(IEnumerable<ISettings> settings)
     {
-        if (_disposed)
-            return;
-
-        var settings = await _settingsFactory();
-        
-        if (settings != null)
+        lock (_lock)
         {
-            Data = FlattenObject(settings);
-            // Notify the configuration system that data has changed
+            _settingsData = settings;
+
+            // Trigger reload on all provider instances
+            _self!.Load();
+        }
+    }
+
+    /// <summary>
+    /// Clears the static settings data and triggers reload on all provider instances. Useful for testing.
+    /// </summary>
+    public static void ClearData()
+    {
+        lock (_lock)
+        {
+            _settingsData = null;
+
+            // Trigger reload on all provider instances
+            _self!.Load();
+        }
+    }
+
+    public override void Load()
+    {
+        lock (_lock)
+        {
+            if (_settingsData != null)
+            {
+                Data = ConvertSettingsToConfigurationData(_settingsData);
+            }
+            else
+            {
+                // Provider is empty until SetData is called
+                Data = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            }
+
             OnReload();
         }
     }
 
-    public void Dispose()
-    {
-        if (!_disposed)
-        {
-            _reloadTimer?.Dispose();
-            _disposed = true;
-        }
-    }
-
-    private Dictionary<string, string?> FlattenObject(object obj, string prefix = "")
+    /// <summary>
+    /// Converts settings collection to configuration data by serializing each setting object to JSON
+    /// and then parsing it to flatten the structure (similar to JsonConfigurationFileParser).
+    /// </summary>
+    private Dictionary<string, string?> ConvertSettingsToConfigurationData(IEnumerable<ISettings> settings)
     {
         var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        
-        if (obj == null)
-            return result;
 
-        var objectType = obj.GetType();
-        var properties = objectType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-
-        foreach (var property in properties)
+        foreach (var setting in settings)
         {
-            var value = property.GetValue(obj);
-            var key = string.IsNullOrEmpty(prefix) ? property.Name : $"{prefix}:{property.Name}";
+            var settingName = setting.SectionName;
+            var settingObject = setting;
 
-            if (value == null)
+            // Serialize the object to JSON
+            var concreteType = setting.GetType();
+            var json = JsonSerializer.Serialize(setting, concreteType, new JsonSerializerOptions
             {
-                result[key] = null;
-            }
-            else if (IsSimpleType(property.PropertyType))
+                WriteIndented = false,
+                AllowDuplicateProperties = false,
+                DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+            });
+
+            // Parse JSON to flattened dictionary using JsonConfigurationFileParser approach
+            var flattenedData = ParseJsonToConfigurationData(json);
+
+            // Add all flattened entries with the setting name as prefix
+            foreach (var entry in flattenedData)
             {
-                result[key] = value.ToString();
-            }
-            else if (property.PropertyType.IsClass)
-            {
-                // Recursively flatten nested objects
-                var nestedValues = FlattenObject(value, key);
-                foreach (var kvp in nestedValues)
-                {
-                    result[kvp.Key] = kvp.Value;
-                }
+                var key = string.IsNullOrEmpty(entry.Key)
+                    ? settingName
+                    : $"{settingName}:{entry.Key}";
+                result[key] = entry.Value;
             }
         }
 
         return result;
     }
 
-    private bool IsSimpleType(Type type)
+    /// <summary>
+    /// Parses JSON string to configuration data dictionary.
+    /// This mimics the behavior of JsonConfigurationFileParser.
+    /// </summary>
+    private Dictionary<string, string?> ParseJsonToConfigurationData(string json)
     {
-        return type.IsPrimitive
-            || type.IsEnum
-            || type == typeof(string)
-            || type == typeof(decimal)
-            || type == typeof(DateTime)
-            || type == typeof(DateTimeOffset)
-            || type == typeof(TimeSpan)
-            || type == typeof(Guid);
+        var data = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        using var jsonDocument = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip,
+            AllowDuplicateProperties = false,
+            
+        });
+
+        if (jsonDocument.RootElement.ValueKind == JsonValueKind.Object)
+        {
+            VisitElement(jsonDocument.RootElement, string.Empty, data);
+        }
+
+        return data;
+    }
+
+    private void VisitElement(JsonElement element, string path, Dictionary<string, string?> data)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    var propertyPath = string.IsNullOrEmpty(path)
+                        ? property.Name
+                        : $"{path}:{property.Name}";
+                    VisitElement(property.Value, propertyPath, data);
+                }
+                break;
+
+            case JsonValueKind.Array:
+                var index = 0;
+                foreach (var arrayElement in element.EnumerateArray())
+                {
+                    var arrayPath = $"{path}:{index}";
+                    VisitElement(arrayElement, arrayPath, data);
+                    index++;
+                }
+                break;
+
+            case JsonValueKind.Number:
+            case JsonValueKind.String:
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                data[path] = element.ToString();
+                break;
+
+            case JsonValueKind.Null:
+                data[path] = null;
+                break;
+        }
     }
 }
